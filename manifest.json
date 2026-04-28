@@ -3,7 +3,7 @@
   "name": "Auto Refresh Explorer",
   "version": "1.0.0",
   "minAppVersion": "0.15.0",
-  "description": "Refresh file explorer automatically on external file changes via Syncthing",
+  "description": "Automatically refreshes the file explorer when external sync tools create new files in the vault.",
   "author": "DYNAMIKS",
   "isDesktopOnly": false
 }
