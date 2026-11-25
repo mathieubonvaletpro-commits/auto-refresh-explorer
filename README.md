@@ -10,10 +10,12 @@ This plugin detects those changes in **~3 seconds** and injects the new files di
 
 ## How it works
 
-1. **Polls watched folders** (`00 INBOX`, `01 PROJET`, `02 CAPS` by default) every 3 seconds using low-cost `adapter.stat()` calls
+1. **Polls the watched folders** every 3 seconds (configurable) using low-cost `adapter.stat()` calls
 2. **Detects changes** — when a folder's modification time changes, something new arrived
 3. **Finds missing files** — compares disk contents with Obsidian's internal index
 4. **Injects TFile objects** — creates proper `TFile` instances with correct parent folders and fires `vault.trigger('create')` so the file explorer and metadata cache pick them up instantly
+
+A folder's mtime only moves when one of its direct children changes, so with **Include subfolders** on, every subfolder is polled on its own and folded in as it appears.
 
 ## Installation
 
@@ -29,12 +31,17 @@ Once approved, search "Auto Refresh Explorer" in Settings → Community Plugins 
 
 ## Configuration
 
-No settings UI yet. To change watched folders or interval, edit the constants at the top of `main.js`:
+Settings → Community Plugins → Auto Refresh Explorer:
 
-```js
-const DEFAULT_WATCHED_FOLDERS = ['00 INBOX', '01 PROJET', '02 CAPS'];
-const DEFAULT_INTERVAL_MS = 3000;
-```
+- **Watched folders** — one folder per line, relative to the vault root. Defaults to `00 INBOX`, `01 PROJET`, `02 CAPS`.
+- **Include subfolders** — also watch every folder below the watched ones (off by default).
+- **Scan interval (ms)** — how often the folders are checked. Minimum 1000, default 3000.
+
+Settings are stored in `.obsidian/plugins/auto-refresh-explorer/data.json` and the poller restarts as soon as one changes. A watched folder that does not exist is reported once with a notice, so a typo does not fail silently.
+
+Also available as the command **Refresh file explorer now** (reloads the whole list without waiting for a change).
+
+Only Markdown files are injected; attachments such as PDFs are left to Obsidian's own watcher.
 
 ## Compatibility
 
