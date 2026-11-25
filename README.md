@@ -35,13 +35,14 @@ Settings → Community Plugins → Auto Refresh Explorer:
 
 - **Watched folders** — one folder per line, relative to the vault root. Defaults to `00 INBOX`, `01 PROJET`, `02 CAPS`.
 - **Include subfolders** — also watch every folder below the watched ones (off by default).
+- **Include attachments** — also add the files Obsidian can open besides notes: PDF, Canvas, images, audio and video (off by default). Partial files left by sync tools and other extensions are never added.
 - **Scan interval (ms)** — how often the folders are checked. Minimum 1000, default 3000.
 
 Settings are stored in `.obsidian/plugins/auto-refresh-explorer/data.json` and the poller restarts as soon as one changes. A watched folder that does not exist is reported once with a notice, so a typo does not fail silently.
 
 Also available as the command **Refresh file explorer now** (reloads the whole list without waiting for a change).
 
-Only Markdown files are injected; attachments such as PDFs are left to Obsidian's own watcher.
+Notes are indexed in the metadata cache when they are added; attachments are only handed to the file explorer, since they are not text. With **Include attachments** off, only Markdown notes are added.
 
 ## Compatibility
 

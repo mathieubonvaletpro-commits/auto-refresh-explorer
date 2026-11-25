@@ -4,8 +4,18 @@ const DEFAULT_SETTINGS = Object.freeze({
     watchedFolders: Object.freeze(['00 INBOX', '01 PROJET', '02 CAPS']),
     scanIntervalMs: 3000,
     includeSubfolders: false,
+    includeAttachments: false,
 });
 const MIN_INTERVAL_MS = 1000;
+
+/** What Obsidian can open, beyond Markdown notes. */
+const ATTACHMENT_EXTENSIONS = new Set([
+    'pdf', 'canvas',
+    'png', 'jpg', 'jpeg', 'gif', 'bmp', 'svg', 'webp', 'avif',
+    'mp3', 'wav', 'm4a', '3gp', 'ogg', 'flac', 'aac', 'opus',
+    'mp4', 'webm', 'ogv', 'mov', 'mkv',
+]);
+const TEMP_SUFFIXES = ['.part', '.tmp', '.crdownload', '.download', '~'];
 const DEFAULT_TIMEOUT_MS = 1000;
 const DEBUG = false; // Set to true for verbose console logging
 
@@ -24,6 +34,22 @@ function cleanFolderList(values) {
     return [...new Set(values.map(normaliseFolder).filter(Boolean))];
 }
 
+function extensionOf(name) {
+    return name.slice(name.lastIndexOf('.') + 1).toLowerCase();
+}
+
+/** Sync tools in flight leave partial files behind; never index those. */
+function isTempFile(name) {
+    return name.startsWith('~$') || name.startsWith('.syncthing.')
+        || TEMP_SUFFIXES.some((suffix) => name.endsWith(suffix));
+}
+
+function isIndexable(name, includeAttachments) {
+    if (name.startsWith('.') || name.startsWith('autorefresh') || isTempFile(name)) return false;
+    if (name.endsWith('.md')) return true;
+    return includeAttachments && ATTACHMENT_EXTENSIONS.has(extensionOf(name));
+}
+
 function foldersFromText(text) {
     return cleanFolderList(String(text).split(/\r?\n/));
 }
@@ -33,6 +59,10 @@ function parseInterval(value) {
     return Math.max(MIN_INTERVAL_MS, Math.floor(value));
 }
 
+function asBoolean(value, fallback) {
+    return typeof value === 'boolean' ? value : fallback;
+}
+
 function parseSettings(raw) {
     const data = raw && typeof raw === 'object' ? raw : {};
     return {
@@ -40,9 +70,8 @@ function parseSettings(raw) {
             ? cleanFolderList(data.watchedFolders)
             : [...DEFAULT_SETTINGS.watchedFolders],
         scanIntervalMs: parseInterval(data.scanIntervalMs),
-        includeSubfolders: typeof data.includeSubfolders === 'boolean'
-            ? data.includeSubfolders
-            : DEFAULT_SETTINGS.includeSubfolders,
+        includeSubfolders: asBoolean(data.includeSubfolders, DEFAULT_SETTINGS.includeSubfolders),
+        includeAttachments: asBoolean(data.includeAttachments, DEFAULT_SETTINGS.includeAttachments),
     };
 }
 
@@ -248,16 +277,8 @@ class AutoRefreshExplorerPlugin extends Plugin {
 
         for (const item of listing.files) {
             const path = item.replace(/\\/g, '/');
-            const name = path.split('/').pop();
-
-            // Only .md, skip hidden & sentinel artefacts
-            if (!name.endsWith('.md') || name.startsWith('.') || name.startsWith('autorefresh')) {
-                continue;
-            }
-
-            if (!this.app.vault.getAbstractFileByPath(path)) {
-                newFiles.push(path);
-            }
+            if (!isIndexable(path.split('/').pop(), this.settings.includeAttachments)) continue;
+            if (!this.app.vault.getAbstractFileByPath(path)) newFiles.push(path);
         }
         return newFiles;
     }
@@ -285,11 +306,8 @@ class AutoRefreshExplorerPlugin extends Plugin {
             this.app.vault.trigger('create', tFile);
             log('Injected:', filePath);
 
-            // 3. Push into metadata cache
-            try {
-                const content = await this.app.vault.adapter.read(filePath);
-                this.app.metadataCache.trigger('resolve', filePath, content, false);
-            } catch { /* not yet readable */ }
+            // 3. Push into metadata cache (notes only: attachments are not text)
+            if (filePath.endsWith('.md')) await this.indexContent(filePath);
 
             // 4. Extra metadata cache nudge
             if (typeof this.app.metadataCache.onCreate === 'function') {
@@ -298,6 +316,13 @@ class AutoRefreshExplorerPlugin extends Plugin {
         } catch (e) {
             log('Injection error:', e.message);
         }
+    }
+
+    async indexContent(filePath) {
+        try {
+            const content = await this.app.vault.adapter.read(filePath);
+            this.app.metadataCache.trigger('resolve', filePath, content, false);
+        } catch { /* not yet readable */ }
     }
 
     /** ── UI refresh ────────────────────────────────────────── */
@@ -357,6 +382,13 @@ class AutoRefreshSettingTab extends PluginSettingTab {
                 .onChange((value) => this.plugin.updateSettings({ includeSubfolders: value })));
 
         new Setting(containerEl)
+            .setName('Include attachments')
+            .setDesc('Also add PDFs, images, audio and video that Obsidian can open.')
+            .addToggle((toggle) => toggle
+                .setValue(settings.includeAttachments)
+                .onChange((value) => this.plugin.updateSettings({ includeAttachments: value })));
+
+        new Setting(containerEl)
             .setName('Scan interval (ms)')
             .setDesc(`How often folders are checked. Minimum ${MIN_INTERVAL_MS}.`)
             .addText((text) => text
@@ -369,5 +401,5 @@ class AutoRefreshSettingTab extends PluginSettingTab {
     }
 }
 
-AutoRefreshExplorerPlugin.helpers = { parseSettings, foldersFromText, DEFAULT_SETTINGS };
+AutoRefreshExplorerPlugin.helpers = { parseSettings, foldersFromText, isIndexable, isTempFile, DEFAULT_SETTINGS };
 module.exports = AutoRefreshExplorerPlugin;

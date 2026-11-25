@@ -97,14 +97,23 @@ test('the settings tab edits and saves each setting', async () => {
     assert.ok(tab instanceof fakeObsidian.PluginSettingTab);
     tab.display();
     const controls = tab.containerEl.children.filter((c) => c.controls).flatMap((c) => c.controls);
-    const byKind = Object.fromEntries(controls.map((c) => [c.kind, c]));
-    assert.equal(byKind.textarea.value, '00 INBOX\n01 PROJET\n02 CAPS');
-    await byKind.textarea.change('notes\nreport/');
-    await byKind.text.change('4000');
-    await byKind.toggle.change(true);
-    await byKind.text.change('soon');
+    assert.equal(controls.length, 4);
+    const [folders, subfolders, attachments, interval] = controls;
+
+    assert.equal(folders.kind, 'textarea');
+    assert.equal(folders.value, '00 INBOX\n01 PROJET\n02 CAPS');
+    assert.deepEqual([subfolders.kind, attachments.kind, interval.kind], ['toggle', 'toggle', 'text']);
+    assert.deepEqual([subfolders.value, attachments.value, interval.value], [false, false, '3000']);
+
+    await folders.change('notes\nreport/');
+    await attachments.change(true);
+    await interval.change('4000');
+    await interval.change('soon');
     stop(p);
-    assert.deepEqual(app.savedData, { watchedFolders: ['notes', 'report'], scanIntervalMs: 4000, includeSubfolders: true });
+    assert.deepEqual(app.savedData, {
+        watchedFolders: ['notes', 'report'], scanIntervalMs: 4000,
+        includeSubfolders: false, includeAttachments: true,
+    });
 });
 
 test('a subfolder created after start is picked up with its files', async () => {
@@ -151,4 +160,32 @@ test('no warning when every watched folder exists', async () => {
     const p = await start(app);
     p.onunload();
     assert.deepEqual(fakeObsidian.Notice.shown, ['Auto Refresh: active']);
+});
+
+test('attachments are skipped by default and injected when the option is on', async () => {
+    for (const includeAttachments of [false, true]) {
+        const disk = { report: { mtime: 1, files: [] } };
+        const app = makeApp({ disk, savedData: { watchedFolders: ['report'], includeAttachments } });
+        const p = await start(app);
+        for (const n of ['cr.md', 'cr.pdf', 'shot.png', 'call.m4a']) disk.report.files.push(n);
+        disk.report.mtime += 1;
+        await p.scanFolders();
+        stop(p);
+        assert.deepEqual(app.created, includeAttachments
+            ? ['report/cr.md', 'report/cr.pdf', 'report/shot.png', 'report/call.m4a']
+            : ['report/cr.md']);
+    }
+});
+
+test('with attachments on, temp and unknown files are still skipped', async () => {
+    const disk = { notes: { mtime: 1, files: [] } };
+    const app = makeApp({ disk, savedData: { watchedFolders: ['notes'], includeAttachments: true } });
+    const p = await start(app);
+    for (const n of ['a.pdf.part', 'b.pdf.tmp', 'c.crdownload', '~$d.docx', 'e.zip', 'f.docx.pdf']) {
+        disk.notes.files.push(n);
+    }
+    disk.notes.mtime += 1;
+    await p.scanFolders();
+    stop(p);
+    assert.deepEqual(app.created, ['notes/f.docx.pdf']);
 });

@@ -202,3 +202,19 @@ test('a folder item without a redraw hook does not block the next view', async (
     p.onunload();
     assert.deepEqual(calls, ['f']);
 });
+
+test('an attachment is injected without being parsed as text', async () => {
+    const disk = { report: { mtime: 1, files: [] } };
+    const app = makeApp({ disk, savedData: { watchedFolders: ['report'], includeAttachments: true } });
+    const read = [];
+    const resolved = [];
+    app.vault.adapter.read = async (p) => { read.push(p); return 'x'; };
+    app.metadataCache = { trigger: (ev, ...a) => resolved.push([ev, ...a]) };
+    const p = await start(app);
+    syncNewFile(disk, 'report', 'cr.pdf');
+    await p.scanFolders();
+    p.onunload();
+    assert.deepEqual(app.created, ['report/cr.pdf']);
+    assert.deepEqual(read, []);
+    assert.deepEqual(resolved, []);
+});
